@@ -56,7 +56,7 @@ def _sql(query):
     return query.replace("INSERT OR IGNORE INTO", "INSERT INTO").replace("?", "%s")
 
 async def connect():
-    return await AsyncConnection.connect(DATABASE_URL, row_factory=dict_row)
+    return await AsyncConnection.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None)
 
 async def init_db():
     async with await connect() as conn:
