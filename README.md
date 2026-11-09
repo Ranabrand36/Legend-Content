@@ -1,106 +1,106 @@
-# 👑 Legend Content Hub — Full Project
+# 👑 Legend Content Hub
 
-Complete Telegram content delivery + paid/free access bot with a read-only web monitoring dashboard.
+Telegram content-delivery bot with paid/free access, manual payment approval, owner controls and a read-only web dashboard.
 
-## Features included
+## Deployment architecture
 
-- Single-owner admin access (`OWNER_ID`); no sub-admin accounts.
-- User registration and main menu.
-- Force-join multiple public/private channels.
-- Re-check membership before browsing and receiving content.
-- Content upload from Telegram: text, links, photos, videos, documents, audio, voice, animation and video notes.
-- Free or PKR-priced content.
-- Unique deep links for every content item.
-- Content listing, title/description editing, activation/deactivation, price changes and deletion.
-- Manual payment methods (JazzCash, Easypaisa or other account details).
-- Users submit transaction reference and optional screenshot/document proof.
-- Owner approves/rejects payment requests from Telegram.
-- Approved access is recorded and content is delivered automatically.
-- Broadcast text/media/forwarded messages to registered users, with confirmation and result counts.
-- Basic statistics and recent payment monitoring in a password-protected web dashboard.
-- Owner-triggered SQLite database backup sent to the Telegram owner chat.
-- SQLite database created automatically.
+- **Telegram bot:** persistent Python worker (polling; do not deploy as a Vercel function).
+- **Dashboard:** FastAPI app deployed separately to Vercel using `api/index.py`.
+- **Database:** shared Supabase PostgreSQL database. Both services use the same `DATABASE_URL`.
+- **Admin access:** one Telegram owner ID; dashboard protected by HTTP Basic Authentication.
 
-## Requirements
+## Features
 
-- Python 3.10+
-- A Telegram bot token from `@BotFather`
-- Your numeric Telegram user ID
-- For force join: add the bot as an administrator in every required channel.
-- Open the bot in your owner Telegram account and send `/start` once so it can send you payment alerts and database backups.
-- For public web access: deploy behind HTTPS/reverse proxy. The dashboard uses HTTP Basic Authentication.
+- Single-owner Telegram admin panel.
+- User registration, content browsing and purchase history.
+- Force-join multiple channels with membership verification.
+- Upload text, links, photos, videos, documents, audio, voice, animation and video notes.
+- Free and PKR-priced content with unique deep links.
+- Edit, activate/deactivate and delete content.
+- Manual payment methods and proof/reference submission.
+- Owner approval/rejection and automatic delivery after approval.
+- Broadcast with confirmation and delivery counts.
+- PostgreSQL-backed users, content, channels, payments, purchases, settings and broadcast logs.
+- Authenticated, read-only dashboard with stats and recent payment requests.
+- Owner-triggered JSON data export backup from PostgreSQL.
 
-## Installation (Windows)
+## 1. Supabase setup
 
-1. Extract the ZIP.
-2. Open PowerShell in the extracted folder.
-3. Create a virtual environment:
+1. Create a Supabase project.
+2. Open **Connect** and copy the **Transaction Pooler** PostgreSQL connection string.
+3. Keep the password private. Do not commit it to GitHub.
+4. The app creates its tables automatically on first startup. Do not manually create the schema.
 
-   `py -m venv .venv`
+Use the full connection string as `DATABASE_URL`, including SSL mode. Example format only:
 
-4. Activate it:
+```text
+postgresql://postgres.PROJECT_REF:PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require
+```
 
-   `.venv\\Scripts\\Activate.ps1`
+Replace every placeholder with the values Supabase gives your project. If the password contains URL-reserved characters, use the URL-encoded password from the connection string.
 
-5. Install dependencies:
+## 2. Telegram worker deployment
 
-   `pip install -r requirements.txt`
+Deploy the repository to an always-on Python worker host. Set these environment variables in the host's private environment settings:
 
-6. Copy `.env.example` to `.env` (Windows PowerShell: `Copy-Item .env.example .env`).
-7. Edit `.env` and set:
-   - `BOT_TOKEN`
-   - `OWNER_ID`
-   - `WEB_PASSWORD` (use a long unique password)
-8. Start:
+- `BOT_TOKEN` — token from BotFather.
+- `OWNER_ID` — your numeric Telegram user ID.
+- `DATABASE_URL` — Supabase Transaction Pooler connection string.
+- `WEB_USERNAME` — dashboard login username.
+- `WEB_PASSWORD` — long, unique dashboard password.
+- `BOT_PUBLIC_URL` — optional Vercel dashboard URL.
+- `SUPPORT_USERNAME` — optional support username.
 
-   `python main.py`
-
-## Installation (Linux / VPS)
+Build/install command:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-nano .env
+```
+
+Start command:
+
+```bash
 python main.py
 ```
 
-Use a process manager such as systemd or Supervisor to keep the app running after logout/reboot. Do not run multiple polling instances using the same bot token.
+The worker must remain running continuously. Do not run two polling workers with the same bot token.
 
-## Telegram usage
+## 3. Vercel dashboard deployment
 
-- Send `/start` to the bot as a user.
-- Send `/admin` from the owner account to open the owner panel.
-- Add content from the panel. The wizard asks for title, description, price (`free` or a PKR amount), then the content message.
-- Generate a unique link from Manage Content → item → Get Link.
-- Manage force join channels from Force Join. Format: `@channelusername | https://t.me/channelusername`
-- Add a payment method from Payment Details. Supply name, account holder, account number and instructions.
-- Broadcast from the panel. Send a message/media, review target count, then confirm.
-- Approve/reject payments using the inline buttons sent to the owner.
+1. Import this GitHub repository into Vercel.
+2. Set the same `DATABASE_URL` in Vercel Project → Settings → Environment Variables.
+3. Also set `WEB_USERNAME` and a strong `WEB_PASSWORD`.
+4. Deploy. Vercel serves the FastAPI dashboard from `api/index.py`.
+5. Open the deployed URL and sign in using the dashboard credentials.
 
-## Web dashboard
+The dashboard is intentionally read-only. Uploads, channel rules, payment methods, payment reviews and broadcasts remain in the Telegram owner panel.
 
-The FastAPI dashboard starts with the bot on port `8000` by default.
-Open `http://YOUR_SERVER_IP:8000/` and enter `WEB_USERNAME` / `WEB_PASSWORD`.
+## 4. Local development
 
-For public production use, put it behind HTTPS (for example, Nginx + a TLS certificate). Do not expose the dashboard over plain HTTP on an untrusted network. Set `BOT_PUBLIC_URL` to the HTTPS address to show it in the Telegram panel.
+Python 3.10+ is required.
 
-The web dashboard is intentionally read-only. Content, force-join channels, payment details, payment reviews and broadcasts are managed from the Telegram owner panel, as requested.
+```bash
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python main.py
+```
 
-## Important operation notes
+Set real values in `.env` before starting.
 
-- The bot must be an administrator in force-join channels so Telegram can verify membership of other users.
-- Private channel invite links can be used for the join buttons. The bot must be added to the channel first.
-- Payment screenshots are only evidence submitted by the buyer. Owner must independently verify the transaction in the wallet/account before approving.
-- `protect_content` asks Telegram to restrict forwarding/saving, but it is not absolute DRM or a guarantee against copying.
-- SQLite is suitable for a small/medium initial deployment. For high traffic or multiple app instances, migrate to PostgreSQL and use a persistent shared FSM storage (such as Redis).
-- Back up `data/legend_content_hub.sqlite3` regularly. You can also use the Database Backup button in `/admin`; restore a backup only after stopping the bot.
-- Never share `.env`, bot token, or dashboard password. Do not commit them to GitHub.
+## Backups and data migration
 
-## Known scope / future upgrades
+The Telegram backup action exports all application tables to a JSON file. Store exports securely; they contain user IDs and payment references. This export is a data snapshot, not a complete PostgreSQL schema/roles backup.
 
-- Broadcast is sequential and reports success/failure. It uses a small delay to reduce rate-limit risk.
-- FSM state uses in-memory storage and is cleared if the process restarts mid-wizard.
-- No automatic wallet API payment integration is included; payment verification is manual, by design.
-- No public user registration or web-based content editing is enabled.
+The PostgreSQL migration creates a new empty schema. Existing SQLite data is **not** automatically imported. If the old SQLite database contains real users, content or payment history, migrate it separately before switching the live bot.
+
+## Important operational notes
+
+- Add the bot as an administrator in force-join channels so membership checks work.
+- Manually verify wallet transactions in your payment account before approving.
+- Telegram `protect_content` is a deterrent, not guaranteed DRM.
+- FSM uses in-memory storage; an in-progress multi-step wizard is cleared if the worker restarts.
+- Supabase free projects may pause under provider inactivity policies. A persistent worker does not prevent database pausing.
+- Never commit `.env`, tokens, passwords, connection strings or private payment/user data.
