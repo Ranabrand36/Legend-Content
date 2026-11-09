@@ -4,10 +4,14 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse
 from config import WEB_USERNAME, WEB_PASSWORD
-from app.db import get_stats, fetchall
+from app.db import get_stats, fetchall, init_db
 
 app = FastAPI(title="Legend Content Hub Dashboard", docs_url=None, redoc_url=None)
 security = HTTPBasic()
+
+@app.on_event("startup")
+async def startup():
+    await init_db()
 
 def auth(credentials: HTTPBasicCredentials = Depends(security)):
     if not WEB_PASSWORD:
