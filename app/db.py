@@ -61,7 +61,9 @@ async def connect():
 async def init_db():
     async with await connect() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(SCHEMA)
+            for statement in SCHEMA.split(";"):
+                if statement.strip():
+                    await cur.execute(statement)
 
 async def execute(query, params=()):
     q = _sql(query.strip())
