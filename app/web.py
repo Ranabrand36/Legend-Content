@@ -1,14 +1,21 @@
 import secrets
+from html import escape as html_escape
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse
 from config import WEB_USERNAME, WEB_PASSWORD
-from app.db import get_stats, fetchall
+from app.db import get_stats, fetchall, init_db
 
 app = FastAPI(title="Legend Content Hub Dashboard", docs_url=None, redoc_url=None)
 security = HTTPBasic()
 
+@app.on_event("startup")
+async def startup():
+    await init_db()
+
 def auth(credentials: HTTPBasicCredentials = Depends(security)):
+    if not WEB_PASSWORD:
+        raise HTTPException(status_code=503, detail="Dashboard password is not configured")
     ok_user = secrets.compare_digest(credentials.username, WEB_USERNAME)
     ok_pass = secrets.compare_digest(credentials.password, WEB_PASSWORD)
     if not (ok_user and ok_pass):
@@ -37,8 +44,9 @@ async def dashboard(_: str = Depends(auth)):
     )
     trs = "".join(
         "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
-            r["order_code"], r["first_name"] or "Unknown", r["title"] or "Deleted",
-            r["status"], r["created_at"]
+            html_escape(str(r["order_code"] or "")), html_escape(str(r["first_name"] or "Unknown")),
+            html_escape(str(r["title"] or "Deleted")), html_escape(str(r["status"] or "")),
+            html_escape(str(r["created_at"] or ""))
         ) for r in recent
     ) or "<tr><td colspan='5'>No payment records yet.</td></tr>"
     return f"""<!doctype html><html><head><meta charset="utf-8">
