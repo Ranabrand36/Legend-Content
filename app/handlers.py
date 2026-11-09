@@ -1,16 +1,13 @@
 import asyncio
 import logging
-from html import escape
-import sqlite3
-import tempfile
-from pathlib import Path
 from datetime import datetime
+from html import escape
 from aiogram import Router, F, Bot
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from config import OWNER_ID, WELCOME_TEXT, SUPPORT_USERNAME, BOT_PUBLIC_URL, DB_PATH
+from config import OWNER_ID, WELCOME_TEXT, SUPPORT_USERNAME, BOT_PUBLIC_URL
 from app import db
 from app.states import (AddContent, AddChannel, AddPaymentMethod, SubmitPayment, Broadcast,
                          EditContentPrice, SetBotSetting, EditContentInfo)
@@ -942,26 +939,17 @@ async def setting_text_handler(message: Message, state: FSMContext):
 @router.callback_query(F.data == "admin:backup")
 async def admin_backup(call: CallbackQuery):
     if not is_owner(call.from_user.id):
-        await call.answer("Not authorized.", show_alert=True); return
-    source_path = Path(DB_PATH)
-    if not source_path.exists():
-        await call.answer("Database file not found.", show_alert=True); return
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = Path(tempfile.gettempdir()) / f"legend_content_hub_backup_{stamp}.sqlite3"
-    src = sqlite3.connect(str(source_path))
-    dst = sqlite3.connect(str(backup_path))
+        await call.answer("Not authorized.", show_alert=True)
+        return
     try:
-        src.backup(dst)
-        dst.commit()
-    finally:
-        dst.close()
-        src.close()
-    try:
-        await call.message.answer_document(FSInputFile(str(backup_path)),
-            caption="💾 <b>Legend Content Hub database backup</b>\nKeep this file somewhere safe.")
-    finally:
-        backup_path.unlink(missing_ok=True)
-    await call.answer("Backup sent.")
+        payload = await db.export_backup()
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        document = BufferedInputFile(payload, filename=f"legend_content_hub_backup_{stamp}.json")
+        await call.message.answer_document(document, caption="💾 <b>Legend Content Hub PostgreSQL data export</b>\nKeep this file somewhere safe.")
+        await call.answer("Backup sent.")
+    except Exception:
+        log.exception("PostgreSQL backup export failed")
+        await call.answer("Backup failed. Check the worker logs.", show_alert=True)
 
 @router.callback_query(F.data == "admin:web")
 async def web_link(call: CallbackQuery):
