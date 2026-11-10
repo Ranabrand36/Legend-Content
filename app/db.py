@@ -110,13 +110,13 @@ async def execute(query, params=()):
             return cur.rowcount
 
 async def fetchone(query, params=()):
-    async with await connect() as conn:
+    async with connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(_sql(query), params)
             return await cur.fetchone()
 
 async def fetchall(query, params=()):
-    async with await connect() as conn:
+    async with connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(_sql(query), params)
             return await cur.fetchall()
@@ -187,7 +187,7 @@ async def get_payment(payment_id): return await fetchone("SELECT * FROM payments
 
 async def review_payment(payment_id,approved):
     status="approved" if approved else "rejected"
-    async with await connect() as conn:
+    async with connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute("UPDATE payments SET status=%s,reviewed_at=CURRENT_TIMESTAMP WHERE id=%s AND status='pending'",(status,payment_id))
             await cur.execute("SELECT * FROM payments WHERE id=%s",(payment_id,))
