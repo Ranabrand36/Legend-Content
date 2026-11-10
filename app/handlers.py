@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime
 from html import escape
 from aiogram import Router, F, Bot
@@ -29,11 +30,14 @@ async def require_owner(message: Message) -> bool:
     return True
 
 async def check_join(bot: Bot, user_id: int):
+    started = time.perf_counter()
     enabled = await db.get_setting("force_join_enabled", "1")
     if enabled != "1":
+        log.info("force_join_check user=%s enabled=false elapsed_ms=%.1f", user_id, (time.perf_counter() - started) * 1000)
         return []
     channels = await db.get_channels()
     if not channels:
+        log.info("force_join_check user=%s channels=0 elapsed_ms=%.1f", user_id, (time.perf_counter() - started) * 1000)
         return []
 
     # Check required channels concurrently instead of waiting for each Telegram
@@ -54,7 +58,9 @@ async def check_join(bot: Bot, user_id: int):
                 return ch
 
     results = await asyncio.gather(*(check_one(ch) for ch in channels))
-    return [ch for ch in results if ch is not None]
+    missing = [ch for ch in results if ch is not None]
+    log.info("force_join_check user=%s channels=%s missing=%s elapsed_ms=%.1f", user_id, len(channels), len(missing), (time.perf_counter() - started) * 1000)
+    return missing
 
 async def send_join_gate(target, channels, code=""):
     text = "🔒 <b>Access Required</b>\n\nPlease join all required channels, then tap Verify."
@@ -158,9 +164,11 @@ async def cancel_action(message: Message, state: FSMContext):
 
 @router.message(CommandStart())
 async def start(message: Message, bot: Bot, state: FSMContext):
+    started = time.perf_counter()
     await state.clear()
     user = message.from_user
     await db.save_user(user.id, user.username, user.first_name)
+    log.info("/start user=%s stage=save_user elapsed_ms=%.1f", user.id, (time.perf_counter() - started) * 1000)
     payload = ""
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) > 1:
@@ -182,7 +190,9 @@ async def start(message: Message, bot: Bot, state: FSMContext):
         await send_join_gate(message, missing)
         return
     welcome = await db.get_setting("welcome_text", WELCOME_TEXT)
+    log.info("/start user=%s stage=before_reply elapsed_ms=%.1f", user.id, (time.perf_counter() - started) * 1000)
     await message.answer(welcome, reply_markup=user_menu())
+    log.info("/start user=%s stage=complete elapsed_ms=%.1f", user.id, (time.perf_counter() - started) * 1000)
 
 @router.callback_query(F.data.startswith("verify:"))
 async def verify_join(call: CallbackQuery, bot: Bot):
