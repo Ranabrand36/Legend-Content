@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from config import BOT_TOKEN, OWNER_ID
-from app.db import init_db
+from app.db import init_db, close_db
 from app.handlers import router
 
 async def main():
@@ -27,6 +27,7 @@ async def main():
         await dp.start_polling(bot,allowed_updates=dp.resolve_used_update_types())
     finally:
         await bot.session.close()
+        await close_db()
 
 if __name__=="__main__":
     asyncio.run(main())

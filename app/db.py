@@ -1,7 +1,8 @@
 import json
+from contextlib import asynccontextmanager
 import secrets
 import string
-from psycopg import AsyncConnection
+from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
 from config import DATABASE_URL
 
@@ -52,18 +53,45 @@ CREATE INDEX IF NOT EXISTS idx_payments_status_created ON payments(status, creat
 CREATE INDEX IF NOT EXISTS idx_contents_active_id ON contents(active, id DESC);
 """
 
+_pool = None
+
+
 def _sql(query):
     return query.replace("INSERT OR IGNORE INTO", "INSERT INTO").replace("?", "%s")
 
+@asynccontextmanager
 async def connect():
-    return await AsyncConnection.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None)
+    global _pool
+    if _pool is None:
+        await init_db()
+    async with _pool.connection() as conn:
+        yield conn
+
 
 async def init_db():
-    async with await connect() as conn:
+    global _pool
+    if _pool is None:
+        _pool = AsyncConnectionPool(
+            conninfo=DATABASE_URL,
+            min_size=1,
+            max_size=5,
+            timeout=10,
+            kwargs={"row_factory": dict_row, "prepare_threshold": None},
+            open=False,
+        )
+        await _pool.open(wait=True)
+    async with _pool.connection() as conn:
         async with conn.cursor() as cur:
             for statement in SCHEMA.split(";"):
                 if statement.strip():
                     await cur.execute(statement)
+
+
+async def close_db():
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
 
 async def execute(query, params=()):
     q = _sql(query.strip())
@@ -73,7 +101,7 @@ async def execute(query, params=()):
     id_tables = {"contents", "channels", "payment_methods", "payments", "broadcast_logs"}
     if match and match.group(1).lower() in id_tables and "RETURNING" not in q.upper():
         q += " RETURNING id"
-    async with await connect() as conn:
+    async with connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(q, params)
             if "RETURNING id" in q.upper():
@@ -82,13 +110,13 @@ async def execute(query, params=()):
             return cur.rowcount
 
 async def fetchone(query, params=()):
-    async with await connect() as conn:
+    async with connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(_sql(query), params)
             return await cur.fetchone()
 
 async def fetchall(query, params=()):
-    async with await connect() as conn:
+    async with connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute(_sql(query), params)
             return await cur.fetchall()
@@ -159,7 +187,7 @@ async def get_payment(payment_id): return await fetchone("SELECT * FROM payments
 
 async def review_payment(payment_id,approved):
     status="approved" if approved else "rejected"
-    async with await connect() as conn:
+    async with connect() as conn:
         async with conn.cursor() as cur:
             await cur.execute("UPDATE payments SET status=%s,reviewed_at=CURRENT_TIMESTAMP WHERE id=%s AND status='pending'",(status,payment_id))
             await cur.execute("SELECT * FROM payments WHERE id=%s",(payment_id,))
