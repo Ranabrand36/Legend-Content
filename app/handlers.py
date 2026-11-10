@@ -33,20 +33,28 @@ async def check_join(bot: Bot, user_id: int):
     if enabled != "1":
         return []
     channels = await db.get_channels()
-    missing = []
-    for ch in channels:
-        try:
-            member = await bot.get_chat_member(ch["chat_id"], user_id)
-            status = getattr(member, "status", "")
-            is_member = status in ("creator", "administrator", "member")
-            if status == "restricted":
-                is_member = bool(getattr(member, "is_member", False))
-            if not is_member:
-                missing.append(ch)
-        except Exception as exc:
-            log.warning("Force-join check failed for %s: %s", ch["chat_id"], exc)
-            missing.append(ch)
-    return missing
+    if not channels:
+        return []
+
+    # Check required channels concurrently instead of waiting for each Telegram
+    # API request sequentially. Limit concurrency to avoid flooding Telegram.
+    semaphore = asyncio.Semaphore(5)
+
+    async def check_one(ch):
+        async with semaphore:
+            try:
+                member = await bot.get_chat_member(ch["chat_id"], user_id)
+                status = getattr(member, "status", "")
+                is_member = status in ("creator", "administrator", "member")
+                if status == "restricted":
+                    is_member = bool(getattr(member, "is_member", False))
+                return None if is_member else ch
+            except Exception as exc:
+                log.warning("Force-join check failed for %s: %s", ch["chat_id"], exc)
+                return ch
+
+    results = await asyncio.gather(*(check_one(ch) for ch in channels))
+    return [ch for ch in results if ch is not None]
 
 async def send_join_gate(target, channels, code=""):
     text = "🔒 <b>Access Required</b>\n\nPlease join all required channels, then tap Verify."
